@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import time
+import subprocess
 import ollama
 from rich.console import Console
 from rich.markdown import Markdown
@@ -14,15 +15,19 @@ console = Console()
 
 CONFIG_DIR = os.path.expanduser("~/.config/termcoder")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+HISTORY_DIR = os.path.join(CONFIG_DIR, "history")
 
 DEFAULT_CONFIG = {
     "model": "qwen2.5-coder:3b",
-    "system_prompt": "Eres TermCoder, un asistente de desarrollo de software senior, conciso y técnico, ejecutándose localmente. Ayudas a escribir código robusto, limpio y eficiente."
+    "system_prompt": "You are TermCoder, an expert, concise, and technical senior software development assistant running locally. You help write robust, clean, efficient code and debug issues directly."
 }
 
 def load_config():
     if not os.path.exists(CONFIG_DIR):
         os.makedirs(CONFIG_DIR, exist_ok=True)
+    if not os.path.exists(HISTORY_DIR):
+        os.makedirs(HISTORY_DIR, exist_ok=True)
+        
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, indent=4)
@@ -37,12 +42,13 @@ def save_config(config):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
 
+# Corrected ASCII Banner for TERMCODER
 ASCII_BANNER = """
- ████████ ███████ ██████  ███    ███  ██████  ██████  ██████  ███████ 
-     ██    ██      ██   ██ ████  ████ ██    ██ ██   ██ ██   ██ ██      
-    ██    █████   ██████  ██ ████ ██ ██    ██ ██   ██ ██   ██ █████   
-    ██    ██      ██   ██ ██ ⠁██  ██ ██    ██ ██   ██ ██   ██ ██      
-    ██    ███████ ██   ██ ██      ██ ⠙██████  ██████  ██████  ███████ 
+████████ ███████ ██████  ███    ███  ██████  ██████  ██████  ███████ ██████  
+   ██    ██      ██   ██ ████  ████ ██      ██    ██ ██   ██ ██      ██   ██ 
+   ██    █████   ██████  ██ ████ ██ ██      ██    ██ ██   ██ █████   ██████  
+   ██    ██      ██   ██ ██  ██  ██ ██      ██    ██ ██   ██ ██      ██   ██ 
+   ██    ███████ ██   ██ ██      ██  ██████  ██████  ██████  ███████ ██   ██ 
 """
 
 def read_local_file(path):
@@ -50,16 +56,25 @@ def read_local_file(path):
         with open(path, 'r', encoding='utf-8') as f:
             return f.read()
     except Exception as e:
-        return f"Error al leer el archivo {path}: {e}"
+        return f"Error reading file {path}: {e}"
 
 def list_workspace_files():
     files = []
     for root, dirs, filenames in os.walk('.'):
-        if '.git' in dirs or 'venv' in dirs or '__pycache__' in dirs or '.pytest_cache' in dirs:
-            dirs[:] = [d for d in dirs if d not in ['.git', 'venv', '__pycache__', '.pytest_cache']]
+        if any(exc in root for exc in ['.git', 'venv', '__pycache__', '.pytest_cache', 'node_modules']):
+            continue
         for f in filenames:
             files.append(os.path.join(root, f))
-    return files[:40]
+    return files[:50]
+
+def execute_shell_command(command):
+    console.print(f"[dim]⚡ Running secure shell command: [bold bright_white]{command}[/bold bright_white][/dim]")
+    try:
+        result = subprocess.run(command, shell=True, text=True, capture_output=True, timeout=30)
+        output = result.stdout if result.returncode == 0 else result.stderr
+        return output.strip() if output else "Command executed successfully with no output."
+    except Exception as e:
+        return f"Error executing command: {e}"
 
 def main():
     config = load_config()
@@ -69,10 +84,10 @@ def main():
     
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_row("[dim]Workspace[/dim]", f"[cyan]{os.getcwd()}[/cyan]")
-    table.add_row("[dim]Modelo Activo[/dim]", f"[bold bright_white]{model}[/bold bright_white]")
-    table.add_row("[dim]Comandos[/dim]", "[dim]/model <nombre> | /file <ruta> | /list | salir[/dim]")
+    table.add_row("[dim]Active Model[/dim]", f"[bold bright_white]{model}[/bold bright_white]")
+    table.add_row("[dim]Pro Commands[/dim]", "[dim]/model <name> | /file <path> | /list | /run <cmd> | /save | exit[/dim]")
     
-    console.print(Panel(table, border_style="bright_black", title="TermCoder Workspace", title_align="left"))
+    console.print(Panel(table, border_style="bright_black", title="TermCoder Advanced Workspace", title_align="left"))
     console.print()
 
     messages = [{'role': 'system', 'content': config.get("system_prompt")}]
@@ -85,8 +100,8 @@ def main():
                 continue
             
             cmd = user_input.strip().lower()
-            if cmd in ['salir', 'exit', 'quit']:
-                console.print("[dim]Cerrando sesión de TermCoder. ¡Hasta pronto![/dim]")
+            if cmd in ['exit', 'quit', 'salir']:
+                console.print("[dim]Closing TermCoder session. Goodbye![/dim]")
                 break
             
             if user_input.startswith("/model "):
@@ -94,30 +109,45 @@ def main():
                 config["model"] = new_model
                 save_config(config)
                 model = new_model
-                console.print(f"[dim]✔ Modelo cambiado correctamente a:[/dim] [bold bright_white]{model}[/bold bright_white]\n")
+                console.print(f"[dim]✔ Model successfully switched to:[/dim] [bold bright_white]{model}[/bold bright_white]\n")
                 continue
 
             if user_input.startswith("/file "):
                 file_path = user_input.split(" ", 1)[1].strip()
                 file_content = read_local_file(file_path)
-                attached_files_context += f"\n\n--- ARCHIVO CARGADO: {file_path} ---\n{file_content}\n-----------------------------------\n"
-                console.print(f"[dim]📎 Archivo [cyan]{file_path}[/cyan] adjuntado al contexto del agente.[/dim]\n")
+                attached_files_context += f"\n\n--- ATTACHED FILE: {file_path} ---\n{file_content}\n-----------------------------------\n"
+                console.print(f"[dim]📎 File [cyan]{file_path}[/cyan] attached to agent context.[/dim]\n")
                 continue
 
             if cmd == "/list":
                 files = list_workspace_files()
-                console.print(Panel("\n".join([f"• {f}" for f in files]), title="Archivos en Workspace", border_style="bright_black"))
+                console.print(Panel("\n".join([f"• {f}" for f in files]), title="Workspace Files", border_style="bright_black"))
+                continue
+
+            if user_input.startswith("/run "):
+                shell_cmd = user_input.split(" ", 1)[1].strip()
+                output = execute_shell_command(shell_cmd)
+                console.print(Panel(output, title=f"Output of: {shell_cmd}", border_style="bright_black"))
+                console.print()
+                continue
+
+            if cmd == "/save":
+                timestamp = int(time.time())
+                history_file = os.path.join(HISTORY_DIR, f"session_{timestamp}.json")
+                with open(history_file, "w", encoding="utf-8") as f:
+                    json.dump(messages, f, indent=4)
+                console.print(f"[dim]💾 Session successfully saved to: [cyan]{history_file}[/cyan][/dim]\n")
                 continue
 
             full_prompt = user_input
             if attached_files_context:
-                full_prompt = f"{user_input}\n\nContexto de archivos adjuntos:{attached_files_context}"
+                full_prompt = f"{user_input}\n\nAttached files context:{attached_files_context}"
                 attached_files_context = ""
 
             messages.append({'role': 'user', 'content': full_prompt})
 
             start_time = time.time()
-            with console.status("[dim]Generando respuesta local...[/dim]", spinner="dots"):
+            with console.status("[dim]Generating local response...[/dim]", spinner="dots"):
                 response = ollama.chat(model=model, messages=messages)
 
             elapsed = time.time() - start_time
@@ -130,10 +160,10 @@ def main():
             messages.append({'role': 'assistant', 'content': answer})
 
         except KeyboardInterrupt:
-            console.print("\n[dim]Saliendo...[/dim]")
+            console.print("\n[dim]Exiting...[/dim]")
             break
         except Exception as e:
-            console.print(f"[bold red]Error crítico:[/bold red] {e}")
+            console.print(f"[bold red]Critical Error:[/bold red] {e}")
 
 if __name__ == '__main__':
     main()

@@ -1,53 +1,59 @@
 # 💻 TermCoder
 
-Un agente de desarrollo de software autónomo, minimalista y **100% local** diseñado para ejecutarse en cualquier terminal (Linux, macOS y Windows). Funciona de manera completamente autónoma mediante **Ollama** y modelos abiertos.
+An autonomous, minimalist, and **100% local** software development agent designed to run in any terminal (Linux, macOS, and Windows). Powered entirely by **Ollama** and open-weights models.
 
 ---
 
-## 🚀 Características Principales
+## 🚀 Key Features
 
-- **100% Privado y Local:** Cero llamadas a APIs externas, sin telemetría y completamente desconectado de la nube.
-- **Multiplataforma:** Funciona de forma idéntica en Linux, macOS y terminales de Windows.
-- **Estética Sobria TUI:** Interfaz de línea de comandos limpia inspirada en los estándares de diseño más profesionales, construida con `rich`.
-- **Selector de Contexto de Archivos:** Inyecta archivos al vuelo con `/file <ruta>` para que el modelo examine código real de tu workspace.
-- **Gestión Dinámica de Modelos:** Cambia de modelo en caliente sin reiniciar la sesión mediante `/model <nombre>`.
-- **Listado de Workspace:** Explora los archivos estructurados de tu proyecto con `/list`.
+- **100% Private & Local:** Zero external API calls, zero telemetry, fully disconnected from the cloud.
+- **Cross-Platform:** Works seamlessly across Linux, macOS, and Windows terminals.
+- **Sober TUI Design:** Clean command-line interface inspired by professional design standards, built with `rich`.
+- **File Context Injector:** Easily inject code files on the fly using `/file <path>` so the model can inspect your real workspace code.
+- **Dynamic Model Management:** Switch models on the fly without restarting your session via `/model <name>`.
+- **Workspace Navigation:** Explore structured project files using `/list`.
+- **Shell Command Execution:** Run local tests, install dependencies, or check scripts securely via `/run <command>`.
+- **Session History Persistence:** Save your current agent session to JSON using `/save`.
 
 ---
 
-## 🛠️ Instalación
+## 🛠️ Installation
 
-1. Asegúrate de tener Ollama corriendo en tu máquina:
+1. Ensure Ollama is running on your machine:
    - Linux/macOS: `sudo systemctl enable --now ollama`
-   - Windows: Asegúrate de que la app de Ollama esté abierta en la bandeja del sistema.
+   - Windows: Make sure the Ollama app is running in your system tray.
 
-2. Clona el repositorio y entra en la carpeta:
+2. Clone your repository and enter the directory:
    ```bash
-   git clone [https://github.com/dlopeddtorred/termcoder.git](https://github.com/dlopeddtorred/termcoder.git)
-   cd termcoder
-    ```
-    Instálalo en modo desarrollo local:
+   git clone git@github.com:DlopedDtorred/termcode.git
+   cd termcode
+   ```
+    Install it in local editable mode:
     ```bash
 
     pip install --editable .
-    ```
-## 💡 Uso y Comandos
+    ``
+## 💡 Usage & Commands
 
-Una vez instalado, ejecuta el comando global en cualquier directorio de código:
-```bash
+Once installed, execute the global command inside any code workspace directory:
+Bash
 
 termcoder
-```
-Comandos de sesión:
 
-    /model <nombre>: Cambia el modelo activo de Ollama (ej. qwen2.5-coder:3b).
+Session Commands:
 
-    /file <ruta>: Lee e incluye un archivo de texto o código en el contexto del chat.
+    /model <name>: Switches the active Ollama model (e.g., qwen2.5-coder:3b).
 
-    /list: Muestra los ficheros del directorio de trabajo actual.
+    /file <path>: Reads and includes a text or code file into the chat context.
 
-    salir, exit o quit: Finaliza la sesión de TermCoder.
+    /list: Displays files in the current working directory.
 
-## 📄 Licencia
+    /run <cmd>: Executes a secure local shell command and shows its output.
 
-Distribuido bajo los términos de la licencia MIT.
+    /save: Exports the current conversation history to JSON.
+
+    exit, quit or salir: Ends the TermCoder session.
+
+## 📄 License
+
+Distributed under the MIT License.

@@ -32,7 +32,7 @@ An autonomous, minimalist, and **100% local** software development agent designe
     ```bash
 
     pip install --editable .
-    ``
+    ```
 ## 💡 Usage & Commands
 
 Once installed, execute the global command inside any code workspace directory:

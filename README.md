@@ -1,11 +1,4 @@
-████████ ███████ ██████  ███    ███  ██████  ██████  ██████  ███████ ██████  
-   ██    ██      ██   ██ ████  ████ ██      ██    ██ ██   ██ ██      ██   ██ 
-   ██    █████   ██████  ██ ████ ██ ██      ██    ██ ██   ██ █████   ██████  
-   ██    ██      ██   ██ ██  ██  ██ ██      ██    ██ ██   ██ ██      ██   ██ 
-   ██    ███████ ██   ██ ██      ██  ██████  ██████  ██████  ███████ ██   ██ 
-                                                                             
-                                                                             
-# 💻 TermCoder
+# 💻 TermCode
 
 An autonomous, minimalist, and **100% local** software development agent designed to run in any terminal (Linux, macOS, and Windows). Powered entirely by **Ollama** and open-weights models.
 

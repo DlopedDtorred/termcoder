@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "termcoder"
+version = "1.2.0"
+description = "Agente de desarrollo local autónomo, profesional y minimalista para terminales."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Diego", email = "dlopedixorg@gmail.com" }
+]
+dependencies = [
+    "ollama>=0.3.0",
+    "rich>=13.0.0"
+]
+
+[project.scripts]
+termcoder = "termcoder.cli:main"

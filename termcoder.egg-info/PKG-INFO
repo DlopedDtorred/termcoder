@@ -1,0 +1,64 @@
+Metadata-Version: 2.4
+Name: termcoder
+Version: 1.2.0
+Summary: Agente de desarrollo local autónomo, profesional y minimalista para terminales.
+Author-email: Diego <dlopedixorg@gmail.com>
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: ollama>=0.3.0
+Requires-Dist: rich>=13.0.0
+
+# 💻 TermCoder
+
+Un agente de desarrollo de software autónomo, minimalista y **100% local** diseñado para ejecutarse en cualquier terminal (Linux, macOS y Windows). Funciona de manera completamente autónoma mediante **Ollama** y modelos abiertos.
+
+---
+
+## 🚀 Características Principales
+
+- **100% Privado y Local:** Cero llamadas a APIs externas, sin telemetría y completamente desconectado de la nube.
+- **Multiplataforma:** Funciona de forma idéntica en Linux, macOS y terminales de Windows.
+- **Estética Sobria TUI:** Interfaz de línea de comandos limpia inspirada en los estándares de diseño más profesionales, construida con `rich`.
+- **Selector de Contexto de Archivos:** Inyecta archivos al vuelo con `/file <ruta>` para que el modelo examine código real de tu workspace.
+- **Gestión Dinámica de Modelos:** Cambia de modelo en caliente sin reiniciar la sesión mediante `/model <nombre>`.
+- **Listado de Workspace:** Explora los archivos estructurados de tu proyecto con `/list`.
+
+---
+
+## 🛠️ Instalación
+
+1. Asegúrate de tener Ollama corriendo en tu máquina:
+   - Linux/macOS: `sudo systemctl enable --now ollama`
+   - Windows: Asegúrate de que la app de Ollama esté abierta en la bandeja del sistema.
+
+2. Clona el repositorio y entra en la carpeta:
+   ```bash
+   git clone [https://github.com/tu-usuario/termcoder.git](https://github.com/tu-usuario/termcoder.git)
+   cd termcoder
+    ```
+    Instálalo en modo desarrollo local:
+    ```bash
+
+    pip install --editable .
+    ```
+## 💡 Uso y Comandos
+
+Una vez instalado, ejecuta el comando global en cualquier directorio de código:
+```bash
+
+termcoder
+```
+Comandos de sesión:
+
+    /model <nombre>: Cambia el modelo activo de Ollama (ej. qwen2.5-coder:3b).
+
+    /file <ruta>: Lee e incluye un archivo de texto o código en el contexto del chat.
+
+    /list: Muestra los ficheros del directorio de trabajo actual.
+
+    salir, exit o quit: Finaliza la sesión de TermCoder.
+
+## 📄 Licencia
+
+Distribuido bajo los términos de la licencia MIT.

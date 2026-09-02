@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+termcoder/__init__.py
+termcoder/cli.py
+termcoder.egg-info/PKG-INFO
+termcoder.egg-info/SOURCES.txt
+termcoder.egg-info/dependency_links.txt
+termcoder.egg-info/entry_points.txt
+termcoder.egg-info/requires.txt
+termcoder.egg-info/top_level.txt

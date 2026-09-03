@@ -1,5 +1,6 @@
 LICENSE
 README.md
+logo-ascii.txt
 pyproject.toml
 termcoder/__init__.py
 termcoder/cli.py

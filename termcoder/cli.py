@@ -1,10 +1,12 @@
-#!/usr/init/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
 import sys
 import json
 import time
+import re
 import subprocess
+from pathlib import Path
 import ollama
 from rich.console import Console
 from rich.markdown import Markdown
@@ -18,6 +20,8 @@ CONFIG_DIR = os.path.expanduser("~/.config/termcoder")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 HISTORY_DIR = os.path.join(CONFIG_DIR, "history")
 MEMORY_FILE = os.path.join(CONFIG_DIR, "agent_memory.json")
+IGNORED_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache",
+                "node_modules", "build", "dist", ".idea", ".vscode"}
 
 DEFAULT_CONFIG = {
     "model": "qwen2.5-coder:3b",
@@ -26,7 +30,14 @@ DEFAULT_CONFIG = {
     "temperature": 0.2,
     "max_context_files": 25,
     "max_history_messages": 30,
-    "system_prompt_build": "You are TermCoder, an elite autonomous local AI software engineer. Write clean, production-grade code, remember user context, and execute tasks efficiently.",
+    "system_prompt_build": (
+        "You are TermCoder BUILD, an autonomous local coding agent. Inspect the supplied "
+        "workspace context and implement the user's request. Respond with a short summary "
+        "followed by one unified diff in a ```diff fenced block. The diff must contain every "
+        "file change needed and use paths relative to the workspace root. You may also include "
+        "commands that are needed to finish the task in one ```bash fenced block. Do not only "
+        "describe code and do not invent files outside the request."
+    ),
     "system_prompt_chat": "You are TermCoder, an advanced and fast local technical assistant. Keep track of user instructions, preferences, and maintain accurate conversational continuity."
 }
 
@@ -43,8 +54,14 @@ def load_config():
             for k, v in DEFAULT_CONFIG.items():
                 if k not in cfg:
                     cfg[k] = v
+            if cfg.get("system_prompt_build") == (
+                "You are TermCoder, an elite autonomous local AI software engineer. "
+                "Write clean, production-grade code, remember user context, and execute tasks efficiently."
+            ):
+                cfg["system_prompt_build"] = DEFAULT_CONFIG["system_prompt_build"]
+                save_config(cfg)
             return cfg
-    except:
+    except (OSError, json.JSONDecodeError):
         return DEFAULT_CONFIG
 
 def save_config(config):
@@ -58,8 +75,8 @@ def load_persistent_memory():
                 data = json.load(f)
                 if isinstance(data, dict):
                     return {"build": data.get("build", []), "chat": data.get("chat", [])}
-        except:
-            pass
+        except (OSError, json.JSONDecodeError):
+            console.print("[yellow]Could not read memory; starting with an empty history.[/yellow]")
     return {"build": [], "chat": []}
 
 def save_persistent_memory(memory_data):
@@ -76,27 +93,242 @@ def load_ascii_banner():
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     return f.read()
-            except:
+            except OSError:
                 pass
     return "████████ ███████ ██████   ██   ██  ██████  ██████  ██████  ███████ \n   ██    ██      ██   ██   ██  ██  ██    ██ ██   ██ ██   ██ ██      \n   ██    █████   ██████    █████   ██    ██ ██   ██ ██   ██ █████   \n   ██    ██      ██   ██   ██  ██  ██    ██ ██   ██ ██   ██ ██      \n   ██    ███████ ██   ██  ██   ██ ⠙██████  ██████  ██████  ███████ "
 
+def get_workspace_files():
+    """Return workspace files while pruning generated and dependency directories."""
+    files = []
+    for root, dirs, filenames in os.walk("."):
+        dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS)
+        for filename in sorted(filenames):
+            path = Path(root) / filename
+            if not path.is_symlink():
+                files.append(path)
+    return sorted(files)
+
+
+def get_context_limit(config):
+    try:
+        return max(1, min(200, int(config.get("max_context_files", 25))))
+    except (TypeError, ValueError):
+        return 25
+
+
 def get_workspace_summary(max_files=25):
-    file_tree = []
-    for root, dirs, filenames in os.walk('.'):
-        if any(exc in root for exc in ['.git', 'venv', '__pycache__', '.pytest_cache', 'node_modules', 'build', 'dist', '.idea', '.vscode']):
-            continue
-        for f in filenames:
-            file_tree.append(os.path.join(root, f))
-    
+    file_tree = get_workspace_files()
     context_data = ""
-    for file_path in file_tree[:max_files]:
+    # Keep the prompt useful when a workspace contains many generated or binary files.
+    readable_files = []
+    for file_path in file_tree:
         try:
-            if os.path.getsize(file_path) < 30000:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    context_data += f"\n--- FILE: {file_path} ---\n{f.read()}\n"
-        except:
-            pass
+            if file_path.stat().st_size >= 30000:
+                continue
+            with file_path.open("rb") as f:
+                sample = f.read(2048)
+            if b"\0" in sample:
+                continue
+            readable_files.append(file_path)
+        except OSError:
+            continue
+
+    context_data += "[Workspace file inventory]\n"
+    context_data += "\n".join(f"- {path}" for path in file_tree[:max_files])
+    context_data += "\n\n[Workspace file contents]\n"
+    for file_path in readable_files[:max_files]:
+        try:
+            with file_path.open("r", encoding="utf-8", errors="ignore") as f:
+                context_data += f"\n--- FILE: {file_path} ---\n{f.read()}\n"
+        except (OSError, UnicodeError):
+            continue
     return context_data
+
+
+def _message_content(chunk):
+    """Read streamed and non-streamed Ollama response objects."""
+    message = chunk.get("message", {}) if isinstance(chunk, dict) else getattr(chunk, "message", {})
+    if isinstance(message, dict):
+        return message.get("content", "")
+    return getattr(message, "content", "")
+
+
+def get_model_names(client):
+    """Extract model names from all Ollama client response shapes."""
+    response = client.list()
+    models = response.get("models", []) if isinstance(response, dict) else getattr(response, "models", [])
+    names = []
+    for model in models or []:
+        name = model.get("name") if isinstance(model, dict) else getattr(model, "model", None)
+        if name:
+            names.append(name)
+    return sorted(names)
+
+
+def print_help():
+    console.print(Panel(
+        "[bold]/help[/bold]      Muestra esta ayuda\n"
+        "[bold]/files[/bold]     List files included in BUILD context\n"
+        "[bold]/list[/bold]      Alias for /files\n"
+        "[bold]/models[/bold]    List Ollama models\n"
+        "[bold]/doctor[/bold]    Check Ollama, Git, and the workspace\n"
+        "In BUILD, diffs are applied only after confirmation.\n"
+        "[bold]/mode[/bold]      Switch between build and chat\n"
+        "[bold]/model[/bold]     Change the active model\n"
+        "[bold]/host[/bold]      Change the Ollama server\n"
+        "[bold]/run[/bold]       Run a local command after confirmation\n"
+        "[bold]/save[/bold]      Export session memory\n"
+        "[bold]/clear-mem[/bold] Clear memory for the current mode\n"
+        "[bold]exit[/bold]        Close TermCoder",
+        title="TermCoder · Commands", border_style="cyan"
+    ))
+
+
+def extract_unified_diff(response):
+    """Extract one model-generated unified diff from a fenced response."""
+    fenced = re.search(r"```[ \t]*diff[ \t]*\r?\n(.*?)```", response, re.IGNORECASE | re.DOTALL)
+    if fenced:
+        diff = fenced.group(1).strip()
+        if diff.startswith(("diff --git ", "--- ")):
+            return diff
+
+    # Some models omit the language marker while still returning a valid diff.
+    raw = re.search(
+        r"(?m)^(diff --git .+?)(?=\n```|\Z)",
+        response,
+        re.DOTALL,
+    )
+    return raw.group(1).strip() if raw else ""
+
+
+def extract_shell_commands(response):
+    """Extract explicitly fenced shell commands proposed by the model."""
+    blocks = re.findall(
+        r"```(?:bash|sh|shell)\s*\r?\n(.*?)```",
+        response,
+        re.IGNORECASE | re.DOTALL,
+    )
+    return [line.strip() for block in blocks for line in block.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+
+
+def repair_new_file_diff(diff, repository_root=None):
+    """Repair common model diffs that add files without /dev/null headers."""
+    sections = [section for section in re.split(
+        r"(?=^diff --git )", diff, flags=re.MULTILINE
+    ) if section]
+    if not sections or any(not section.startswith("diff --git ") for section in sections):
+        return ""
+
+    repaired = []
+    for section in sections:
+        match = re.search(r"^diff --git a/(.+?) b/(.+?)$", section, re.MULTILINE)
+        if not match:
+            return ""
+        relative_path = Path(match.group(2))
+        path_exists = (
+            (Path(repository_root) / relative_path).exists()
+            if repository_root else relative_path.exists()
+        )
+        if relative_path.is_absolute() or ".." in relative_path.parts or path_exists:
+            return ""
+
+        added_lines = []
+        in_hunk = False
+        for line in section.splitlines():
+            if line.startswith("@@ "):
+                in_hunk = True
+                continue
+            if not in_hunk or line.startswith(("diff --git ", "index ", "--- ", "+++ ")):
+                continue
+            if line.startswith("+") or line.startswith(" "):
+                added_lines.append(line[1:])
+            elif line.startswith("-") or line.startswith("\\"):
+                continue
+            else:
+                return ""
+        if not added_lines:
+            return ""
+
+        path = relative_path.as_posix()
+        repaired.append(
+            f"diff --git a/{path} b/{path}\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            f"+++ b/{path}\n"
+            f"@@ -0,0 +1,{len(added_lines)} @@\n"
+            + "\n".join(f"+{line}" for line in added_lines)
+            + "\n"
+        )
+    return "\n".join(repaired)
+
+
+def normalize_unified_diff(diff):
+    """Add missing context prefixes in hunks from loosely formatted model output."""
+    normalized = []
+    in_hunk = False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            in_hunk = False
+        elif line.startswith("@@ "):
+            in_hunk = True
+        elif in_hunk and not line.startswith(("+", "-", " ", "\\")):
+            line = f" {line}"
+        normalized.append(line)
+    return "\n".join(normalized) + "\n"
+
+
+def request_model_response(client, config, messages):
+    """Collect a streamed Ollama response while supporting dict and object chunks."""
+    result = client.chat(
+        model=config.get("model"),
+        messages=messages,
+        options={"temperature": float(config.get("temperature", 0.2))},
+        stream=True,
+    )
+    return "".join(content for chunk in result if (content := _message_content(chunk)))
+
+
+def apply_model_diff(diff):
+    """Validate and optionally apply a model diff, with or without Git."""
+    repository = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        text=True, capture_output=True, check=False
+    )
+    use_git = repository.returncode == 0
+    repository_root = repository.stdout.strip() if use_git else os.getcwd()
+    candidate = normalize_unified_diff(diff)
+    apply_command = (["git", "apply", "--whitespace=fix", "--recount", "-"]
+                     if use_git else ["patch", "-p1", "-i", "-"])
+    check_command = (["git", "apply", "--check", "--whitespace=fix", "--recount", "-"]
+                     if use_git else ["patch", "--dry-run", "-p1", "-i", "-"])
+    check = subprocess.run(check_command, input=candidate, text=True,
+                           capture_output=True, check=False, cwd=repository_root)
+    if check.returncode != 0:
+        candidate = repair_new_file_diff(candidate, repository_root)
+        if candidate:
+            check = subprocess.run(check_command, input=candidate, text=True,
+                                   capture_output=True, check=False, cwd=repository_root)
+        if check.returncode != 0:
+            detail = check.stderr.strip() or check.stdout.strip() or "invalid diff"
+            console.print(f"[bold red]The proposed change cannot be applied:[/bold red] {detail}")
+            return False
+
+    console.print(Panel(candidate, title="BUILD proposed changes", border_style="yellow"))
+    if not Confirm.ask("[bold yellow]Apply these changes to the workspace?[/bold yellow]", default=True):
+        console.print("[dim]Changes discarded; no files were modified.[/dim]")
+        return False
+
+    applied = subprocess.run(
+        apply_command, input=candidate, text=True, capture_output=True,
+        check=False, cwd=repository_root,
+    )
+    if applied.returncode != 0:
+        detail = applied.stderr.strip() or applied.stdout.strip() or "git apply failed"
+        console.print(f"[bold red]Could not apply the changes:[/bold red] {detail}")
+        return False
+    console.print("[bold green]✔ Changes applied successfully.[/bold green]")
+    return True
 
 def execute_shell_command(command):
     console.print(f"\n[bold yellow]⚡ System Execution Request:[/bold yellow] [bright_white]{command}[/bright_white]")
@@ -165,11 +397,59 @@ def main():
                 print_header(config, persistent_memory)
                 continue
 
+            if cmd == '/help' or cmd == '/?':
+                print_help()
+                continue
+
+            if cmd in ('/files', '/list'):
+                files = get_workspace_files()
+                table = Table("File", "Size", show_header=True)
+                for path in files[:get_context_limit(config)]:
+                    try:
+                        size = f"{path.stat().st_size:,} bytes"
+                    except OSError:
+                        size = "inaccesible"
+                    table.add_row(str(path), size)
+                console.print(table if files else "[yellow]No text files found in the workspace.[/yellow]")
+                continue
+
+            if cmd == '/models':
+                try:
+                    model_names = get_model_names(client)
+                    if model_names:
+                        console.print(Panel("\n".join(model_names), title="Available Ollama models",
+                                            border_style="cyan"))
+                    else:
+                        console.print("[yellow]Ollama has no installed models.[/yellow]")
+                except Exception as e:
+                    console.print(f"[bold red]Could not query Ollama:[/bold red] {e}")
+                continue
+
+            if cmd == '/doctor':
+                console.print("[bold]TermCoder diagnostics[/bold]")
+                console.print(f"Workspace: [green]{os.getcwd()}[/green]")
+                console.print(f"Files detected: [green]{len(get_workspace_files())}[/green]")
+                try:
+                    model_names = get_model_names(client)
+                    active = config.get("model")
+                    status = "OK" if active in model_names else f"falta {active}"
+                    console.print(f"Ollama: [green]OK[/green] ({status})")
+                except Exception as e:
+                    console.print(f"Ollama: [red]ERROR[/red] ({e})")
+                try:
+                    git = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
+                                         text=True, capture_output=True, check=False)
+                    console.print(f"Git: [{'green' if git.returncode == 0 else 'yellow'}]"
+                                  f"{'OK' if git.returncode == 0 else 'no es un repositorio'}[/]")
+                except OSError as e:
+                    console.print(f"Git: [red]ERROR[/red] ({e})")
+                continue
+
             if cmd == '/clear-mem':
                 persistent_memory[current_mode] = [{'role': 'system', 'content': sys_prompt}]
                 save_persistent_memory(persistent_memory)
                 print_header(config, persistent_memory)
-                console.print(f"[bold yellow]✔ Memoria persistente borrada para el modo {current_mode.upper()}[/bold yellow]\n")
+                console.print(f"[bold yellow]✔ Persistent memory cleared for {current_mode.upper()} mode[/bold yellow]\n")
                 messages = persistent_memory[current_mode]
                 continue
 
@@ -180,21 +460,23 @@ def main():
                 continue
 
             if cmd == '/git':
-                res = subprocess.run("git status", shell=True, text=True, capture_output=True)
-                console.print(Panel(res.stdout.strip() or "No output from git status.", title="Git Workspace Status", border_style="cyan"))
+                res = subprocess.run(["git", "status", "--short", "--branch"],
+                                     text=True, capture_output=True, check=False)
+                output = res.stdout.strip() or res.stderr.strip() or "No output from git status."
+                console.print(Panel(output, title="Git Workspace Status", border_style="cyan"))
                 continue
 
-            # Gestión correcta de comandos con argumentos vacíos
+            # Handle commands that require arguments.
             if cmd == '/system':
-                console.print("[bold red]Uso incorrecto:[/bold red] Debes indicar texto. Ejemplo: [cyan]/system Eres un experto en Python[/cyan]")
+                console.print("[bold red]Usage:[/bold red] provide text, for example: [cyan]/system You are a Python expert[/cyan]")
                 continue
 
             if cmd == '/host':
-                console.print(f"[bold]Host actual:[/bold] [magenta]{config.get('ollama_host')}[/magenta]. Uso para cambiar: [cyan]/host http://localhost:11434[/cyan]")
+                console.print(f"[bold]Current host:[/bold] [magenta]{config.get('ollama_host')}[/magenta]. Change it with: [cyan]/host http://localhost:11434[/cyan]")
                 continue
 
             if cmd == '/model':
-                console.print(f"[bold]Modelo actual:[/bold] [bright_white]{config.get('model')}[/bright_white]. Uso para cambiar: [cyan]/model qwen2.5-coder:3b[/cyan]")
+                console.print(f"[bold]Current model:[/bold] [bright_white]{config.get('model')}[/bright_white]. Change it with: [cyan]/model qwen2.5-coder:3b[/cyan]")
                 continue
 
             if user_input.startswith("/system "):
@@ -264,14 +546,17 @@ def main():
                 continue
 
             if current_mode == "build":
-                max_files = config.get("max_context_files", 25)
+                max_files = get_context_limit(config)
                 payload = f"{user_input}\n\n[Automatic Workspace Files Context]:\n{get_workspace_summary(max_files)}"
             else:
                 payload = user_input
 
             messages.append({'role': 'user', 'content': payload})
 
-            max_hist = config.get("max_history_messages", 30)
+            try:
+                max_hist = max(2, int(config.get("max_history_messages", 30)))
+            except (TypeError, ValueError):
+                max_hist = 30
             if len(messages) > max_hist:
                 messages = [messages[0]] + messages[-(max_hist - 1):]
 
@@ -279,24 +564,37 @@ def main():
             console.print()
             console.print(f"[dim italic]── TermCoder [{current_mode.upper()}] · {config.get('model')} · Streaming... ──[/dim italic]\n")
             
-            full_response = ""
             with console.status("[dim]Thinking locally...[/dim]", spinner="dots"):
-                stream = client.chat(
-                    model=config.get("model"), 
-                    messages=messages,
-                    options={"temperature": config.get("temperature", 0.2)},
-                    stream=True
-                )
+                full_response = request_model_response(client, config, messages)
+
+                if current_mode == "build" and not extract_unified_diff(full_response):
+                    repair_messages = messages + [{
+                        "role": "user",
+                        "content": (
+                            "The previous response did not contain an applicable diff. Correct it: "
+                                "return only a one-line summary and a complete unified diff inside "
+                                "```diff```. For new files, use --- /dev/null and +++ b/path. Do not include "
+                                "tutorials, standalone files, or HTML/CSS/JavaScript blocks."
+                        ),
+                    }]
+                    console.print("[dim]The model returned no diff; requesting a corrected response...[/dim]")
+                    full_response = request_model_response(client, config, repair_messages)
             
-            for chunk in stream:
-                content = chunk['message']['content']
-                full_response += content
-                sys.stdout.write(content)
-                sys.stdout.flush()
-            
-            print("\n")
+            console.print(Markdown(full_response))
             elapsed = time.time() - start
-            
+
+            if current_mode == "build":
+                model_diff = extract_unified_diff(full_response)
+                if model_diff:
+                    apply_model_diff(model_diff)
+                else:
+                    console.print(
+                        "[yellow]BUILD did not produce an applicable diff. "
+                        "Ask the model to implement the change, not just describe it.[/yellow]"
+                    )
+                for command in extract_shell_commands(full_response):
+                    output = execute_shell_command(command)
+                    console.print(f"\n[bold]BUILD command output:[/bold]\n{output}\n")
             messages.append({'role': 'assistant', 'content': full_response})
             
             persistent_memory[current_mode] = messages

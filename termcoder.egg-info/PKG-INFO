@@ -7,7 +7,6 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: ollama>=0.3.0
 Requires-Dist: rich>=13.0.0
-Requires-Dist: textual>=0.40.0
 Dynamic: license-file
 
 # 💻 TermCoder
@@ -26,6 +25,7 @@ An autonomous, minimalist, and **100% local** software development agent designe
 - **Workspace Navigation:** Explore structured project files using `/list`.
 - **Shell Command Execution:** Run local tests, install dependencies, or check scripts securely via `/run <command>`.
 - **Session History Persistence:** Save your current agent session to JSON using `/save`.
+- **Real BUILD Mode:** BUILD requests a unified diff from Ollama and applies it to the workspace only after confirmation. It works in ordinary folders as well as Git repositories, and can propose shell commands for confirmation.
 
 ---
 
@@ -40,17 +40,25 @@ An autonomous, minimalist, and **100% local** software development agent designe
    git clone git@github.com:DlopedDtorred/termcode.git
    cd termcode
    ```
-    Install it in local editable mode:
-    ```bash
+   Install it in local editable mode:
+   ```bash
+   python -m pip install --editable .
+   ```
 
-    pip install --editable .
-    ``
+   To build distributable artifacts:
+   ```bash
+   python -m pip install build
+   python -m build
+   ```
+
+   BUILD applies validated diffs after confirmation. Git is optional; run it in any
+   workspace directory. Commands proposed by BUILD are also shown and require confirmation.
 ## 💡 Usage & Commands
 
 Once installed, execute the global command inside any code workspace directory:
-Bash
-
+```bash
 termcoder
+```
 
 Session Commands:
 
@@ -59,6 +67,14 @@ Session Commands:
     /file <path>: Reads and includes a text or code file into the chat context.
 
     /list: Displays files in the current working directory.
+
+    /help: Shows all available commands.
+
+    /files: Lists the files included in BUILD context.
+
+    /models: Lists models installed in Ollama.
+
+    /doctor: Checks the workspace, Git, and Ollama connection.
 
     /run <cmd>: Executes a secure local shell command and shows its output.
 

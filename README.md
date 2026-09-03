@@ -1,76 +1,74 @@
-# 💻 TermCoder
 
-An autonomous, minimalist, and **100% local** software development agent designed to run in any terminal (Linux, macOS, and Windows). Powered entirely by **Ollama** and open-weights models.
+<p align="center">
+  <img src="Logo.jpeg" alt="TermCoder Logo" width="160" height="160">
+</p>
 
----
+# TermCoder
 
-## 🚀 Key Features
-
-- **100% Private & Local:** Zero external API calls, zero telemetry, fully disconnected from the cloud.
-- **Cross-Platform:** Works seamlessly across Linux, macOS, and Windows terminals.
-- **Sober TUI Design:** Clean command-line interface inspired by professional design standards, built with `rich`.
-- **File Context Injector:** Easily inject code files on the fly using `/file <path>` so the model can inspect your real workspace code.
-- **Dynamic Model Management:** Switch models on the fly without restarting your session via `/model <name>`.
-- **Workspace Navigation:** Explore structured project files using `/list`.
-- **Shell Command Execution:** Run local tests, install dependencies, or check scripts securely via `/run <command>`.
-- **Session History Persistence:** Save your current agent session to JSON using `/save`.
-- **Real BUILD Mode:** BUILD requests a unified diff from Ollama and applies it to the workspace only after confirmation. It works in ordinary folders as well as Git repositories, and can propose shell commands for confirmation.
+**The Ultimate Autonomous Local AI Software Engineer & Terminal Assistant.**  
+Powered by Ollama, running entirely offline, securely, and fast inside your terminal.
 
 ---
 
-## 🛠️ Installation
+## What is TermCoder?
 
-1. Ensure Ollama is running on your machine:
-   - Linux/macOS: `sudo systemctl enable --now ollama`
-   - Windows: Make sure the Ollama app is running in your system tray.
+TermCoder is a feature-rich, persistent, interactive CLI agent designed to bridge local Large Language Models (like `qwen2.5-coder`) directly with your workspace. Unlike standard chat interfaces, TermCoder automatically indexes your active workspace files, keeps a multi-mode persistent memory, supports real-time streaming, and lets you execute shell commands or git checks on the fly.
 
-2. Clone your repository and enter the directory:
-   ```bash
-   git clone git@github.com:DlopedDtorred/termcode.git
-   cd termcode
-   ```
-   Install it in local editable mode:
-   ```bash
-   python -m pip install --editable .
-   ```
+---
 
-   To build distributable artifacts:
-   ```bash
-   python -m pip install build
-   python -m build
-   ```
+## Key Features
 
-   BUILD applies validated diffs after confirmation. Git is optional; run it in any
-   workspace directory. Commands proposed by BUILD are also shown and require confirmation.
-## 💡 Usage & Commands
+- **Real-Time Streaming:** Fluid generation of code and text directly in your terminal using Ollama generators.
+- **Automatic Workspace Contexting (build mode):** Recursively inspects your project directory and injects relevant code files as context for your queries automatically.
+- **Dual Engine Modes:** 
+  - `build`: Deep workspace awareness tailored for software development and refactoring.
+  - `chat`: Clean general-purpose mode for quick technical answers and conversations.
+- **Sliding Memory Window:** Smart message history trimming to protect smaller local models from context window saturation.
+- **Integrated Interactive Commands:** Full control over your session without leaving the prompt (`/system`, `/mode`, `/model`, `/host`, `/run`, `/git`, `/save`, `/clear`).
+- **Persistent State:** Automatically saves session memory across runs to `~/.config/termcoder/agent_memory.json`.
 
-Once installed, execute the global command inside any code workspace directory:
+---
+
+## Installation
+
+Clone the repository and install it in editable mode using pip:
+
+```bash
+git clone [https://github.com/dlopeddtorred/termcoder.git](https://github.com/dlopeddtorred/termcoder.git)
+cd termcoder
+pip install --editable .
+```
+Make sure you have Ollama running locally with your desired coding model pulled:
+```bash
+ollama pull qwen2.5-coder:3b
+```
+## Usage
+Launch TermCoder simply by running:
 ```bash
 termcoder
 ```
 
-Session Commands:
+> [!TIP]
+> Use build mode when working inside a codebase so TermCoder can automatically read your project structure and files.Use build mode when working inside a codebase so TermCoder can automatically read your project structure and files. Switch to chat mode for general technical questions using /mode chat.
 
-    /model <name>: Switches the active Ollama model (e.g., qwen2.5-coder:3b).
+> [!NOTE]
+> Configuration files and persistent histories are safely stored locally under ~/.config/termcoder/.
 
-    /file <path>: Reads and includes a text or code file into the chat context.
+## Interactive Command Reference
 
-    /list: Displays files in the current working directory.
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `/mode <build\|chat>` | Switch between workspace-aware and general chat modes. | `/mode chat` |
+| `/model <model_name>` | Change the active local model on the fly. | `/model qwen2.5-coder:7b` |
+| `/host <url>` | Change the Ollama backend host URL. | `/host http://localhost:11434` |
+| `/system <prompt>` | Update the active system prompt instantly. | `/system You are a senior DevOps engineer` |
+| `/run <command>` | Execute a local shell command with confirmation. | `/run pytest` |
+| `/git` | Check current git workspace status. | `/git` |
+| `/config` | View current configuration file settings. | `/config` |
+| `/clear-mem` | Wipe persistent memory for the current mode. | `/clear-mem` |
+| `/save` | Export full multi-mode memory to a timestamped JSON file. | `/save` |
+| `/clear` | Clear terminal screen and redraw header banner. | `/clear` |
+| `exit` / `quit` | Close the session gracefully. | `exit` |
 
-    /help: Shows all available commands.
-
-    /files: Lists the files included in BUILD context.
-
-    /models: Lists models installed in Ollama.
-
-    /doctor: Checks the workspace, Git, and Ollama connection.
-
-    /run <cmd>: Executes a secure local shell command and shows its output.
-
-    /save: Exports the current conversation history to JSON.
-
-    exit, quit or salir: Ends the TermCoder session.
-
-## 📄 License
-
-Distributed under the MIT License.
+## License
+Distributed under the MIT License. See LICENSE for more information.

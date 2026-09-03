@@ -24,7 +24,9 @@ TermCoder is a feature-rich, persistent, interactive CLI agent designed to bridg
   - `build`: Deep workspace awareness tailored for software development and refactoring.
   - `chat`: Clean general-purpose mode for quick technical answers and conversations.
 - **Sliding Memory Window:** Smart message history trimming to protect smaller local models from context window saturation.
-- **Integrated Interactive Commands:** Full control over your session without leaving the prompt (`/system`, `/mode`, `/model`, `/host`, `/run`, `/git`, `/save`, `/clear`).
+- **Integrated Interactive Commands:** Full control over your session without leaving the prompt (`/system`, `/mode`, `/model`, `/host`, `/run`, `/search`, `/git`, `/save`, `/clear`).
+- **Confirmed system commands:** BUILD and CHAT can run shell commands proposed by the model or entered with `/run`; every command requires confirmation and runs in the current workspace with the system environment.
+- **Web search:** BUILD and CHAT can query the public web with `/search <consulta>` without an API key.
 - **Persistent State:** Automatically saves session memory across runs to `~/.config/termcoder/agent_memory.json`.
 
 ---
@@ -63,6 +65,7 @@ termcoder
 | `/host <url>` | Change the Ollama backend host URL. | `/host http://localhost:11434` |
 | `/system <prompt>` | Update the active system prompt instantly. | `/system You are a senior DevOps engineer` |
 | `/run <command>` | Execute a local shell command with confirmation. | `/run pytest` |
+| `/search <query>` | Search the public web and display the results. | `/search Python 3.13 novedades` |
 | `/git` | Check current git workspace status. | `/git` |
 | `/config` | View current configuration file settings. | `/config` |
 | `/clear-mem` | Wipe persistent memory for the current mode. | `/clear-mem` |

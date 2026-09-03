@@ -6,6 +6,9 @@ import json
 import time
 import re
 import subprocess
+from html.parser import HTMLParser
+from urllib.parse import quote, urljoin
+from urllib.request import Request, urlopen
 from pathlib import Path
 import ollama
 from rich.console import Console
@@ -41,24 +44,51 @@ DEFAULT_CONFIG = {
     "system_prompt_chat": "You are TermCoder, an advanced and fast local technical assistant. Keep track of user instructions, preferences, and maintain accurate conversational continuity."
 }
 
+COMMAND_INSTRUCTIONS = (
+    "When you need information from the local system, propose a command in one "
+    "```bash``` block; TermCoder will ask for confirmation, execute it in the current "
+    "workspace with the user's system environment, and show you the output on the next turn. "
+    "The user can also request web results with /search <query> in either mode."
+)
+
 def load_config():
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(HISTORY_DIR, exist_ok=True)
     if not os.path.exists(CONFIG_FILE):
+        defaults = dict(DEFAULT_CONFIG)
+        defaults["system_prompt_build"] += " " + COMMAND_INSTRUCTIONS
+        defaults["system_prompt_chat"] += " " + COMMAND_INSTRUCTIONS
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(DEFAULT_CONFIG, f, indent=4)
-        return DEFAULT_CONFIG
+            json.dump(defaults, f, indent=4)
+        return defaults
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             cfg = json.load(f)
+            changed = False
             for k, v in DEFAULT_CONFIG.items():
                 if k not in cfg:
                     cfg[k] = v
+                    changed = True
+            if COMMAND_INSTRUCTIONS not in cfg["system_prompt_build"]:
+                cfg["system_prompt_build"] = cfg["system_prompt_build"].replace(
+                    "Do not only describe code and do not invent files outside the request.",
+                    "Do not only describe code and do not invent files outside the request. "
+                    + COMMAND_INSTRUCTIONS,
+                )
+                changed = True
+            if COMMAND_INSTRUCTIONS not in cfg["system_prompt_chat"]:
+                cfg["system_prompt_chat"] = cfg["system_prompt_chat"].replace(
+                    "accurate conversational continuity.",
+                    "accurate conversational continuity. " + COMMAND_INSTRUCTIONS,
+                )
+                changed = True
             if cfg.get("system_prompt_build") == (
                 "You are TermCoder, an elite autonomous local AI software engineer. "
                 "Write clean, production-grade code, remember user context, and execute tasks efficiently."
             ):
                 cfg["system_prompt_build"] = DEFAULT_CONFIG["system_prompt_build"]
+                save_config(cfg)
+            elif changed:
                 save_config(cfg)
             return cfg
     except (OSError, json.JSONDecodeError):
@@ -177,6 +207,7 @@ def print_help():
         "[bold]/model[/bold]     Change the active model\n"
         "[bold]/host[/bold]      Change the Ollama server\n"
         "[bold]/run[/bold]       Run a local command after confirmation\n"
+        "[bold]/search[/bold]    Search the web and show results\n"
         "[bold]/save[/bold]      Export session memory\n"
         "[bold]/clear-mem[/bold] Clear memory for the current mode\n"
         "[bold]exit[/bold]        Close TermCoder",
@@ -210,6 +241,113 @@ def extract_shell_commands(response):
     )
     return [line.strip() for block in blocks for line in block.splitlines()
             if line.strip() and not line.lstrip().startswith("#")]
+
+
+class _DuckDuckGoResultsParser(HTMLParser):
+    """Extract the title, URL, and snippet from DuckDuckGo's HTML results."""
+
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self._current = None
+        self._capture = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = set(attrs.get("class", "").split())
+        if tag == "a" and "result__a" in classes:
+            self._current = {"title": "", "url": urljoin("https://html.duckduckgo.com", attrs.get("href", "")),
+                             "snippet": ""}
+            self._capture = "title"
+        elif self._current and tag in ("a", "div") and "result__snippet" in classes:
+            self._capture = "snippet"
+
+    def handle_data(self, data):
+        if self._current and self._capture:
+            self._current[self._capture] += data
+
+    def handle_endtag(self, tag):
+        if self._current and tag == "a" and self._capture == "title":
+            self._capture = None
+        elif self._current and tag == "div" and self._capture == "snippet":
+            self.results.append(self._current)
+            self._current = None
+            self._capture = None
+
+
+class _BingResultsParser(HTMLParser):
+    """Extract standard result cards from Bing's HTML response."""
+
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self._current = None
+        self._capture = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = set(attrs.get("class", "").split())
+        if tag == "li" and "b_algo" in classes:
+            self._current = {"title": "", "url": "", "snippet": ""}
+        elif self._current and tag == "a" and not self._current["url"]:
+            href = attrs.get("href", "")
+            if href.startswith(("http://", "https://")):
+                self._current["url"] = href
+                self._capture = "title"
+        elif self._current and tag in ("p", "div") and (
+                "b_caption" in classes or "b_snippet" in classes):
+            self._capture = "snippet"
+
+    def handle_data(self, data):
+        if self._current and self._capture:
+            self._current[self._capture] += data
+
+    def handle_endtag(self, tag):
+        if self._current and tag == "a" and self._capture == "title":
+            self._capture = None
+        elif self._current and tag == "p" and self._capture == "snippet":
+            self._capture = None
+        elif self._current and tag == "li":
+            if self._current["url"] and self._current["title"]:
+                self.results.append(self._current)
+            self._current = None
+            self._capture = None
+
+
+def search_web(query, max_results=5):
+    """Search the public web without requiring an API key."""
+    if not query.strip():
+        raise ValueError("La consulta de búsqueda no puede estar vacía.")
+    headers = {"User-Agent": "TermCoder/2.0 (+https://github.com/DlopedDtorred/termcode)"}
+    endpoints = (
+        ("https://html.duckduckgo.com/html/?q=", _DuckDuckGoResultsParser),
+        ("https://www.bing.com/search?q=", _BingResultsParser),
+    )
+    errors = []
+    for endpoint, parser_type in endpoints:
+        try:
+            request = Request(endpoint + quote(query), headers=headers)
+            with urlopen(request, timeout=15) as response:
+                html = response.read().decode("utf-8", errors="replace")
+            parser = parser_type()
+            parser.feed(html)
+            if parser.results:
+                return parser.results[:max_results]
+        except OSError as error:
+            errors.append(str(error))
+    if errors:
+        raise OSError("No se pudo consultar un buscador público: " + errors[-1])
+    return []
+
+
+def format_search_results(query, results):
+    if not results:
+        return f"No se encontraron resultados para: {query}"
+    lines = [f"Resultados web para: {query}"]
+    for index, result in enumerate(results, 1):
+        snippet = " ".join(result["snippet"].split())
+        lines.append(f"{index}. {result['title'].strip()}\n   {result['url']}\n   {snippet}")
+    return "\n".join(lines)
 
 
 def repair_new_file_diff(diff, repository_root=None):
@@ -532,6 +670,25 @@ def main():
                 console.print(f"[dim]✔ Local backend host updated to: [magenta]{new_host}[/magenta][/dim]")
                 continue
 
+            if user_input == "/search":
+                console.print("[bold red]Usage:[/bold red] /search <consulta>")
+                continue
+
+            if user_input.startswith("/search "):
+                query = user_input.split(" ", 1)[1].strip()
+                try:
+                    search_output = format_search_results(query, search_web(query))
+                    console.print(Panel(search_output, title="Web Search", border_style="cyan"))
+                    messages.append({
+                        "role": "user",
+                        "content": f"[Web search requested]\n{search_output}",
+                    })
+                    persistent_memory[current_mode] = messages
+                    save_persistent_memory(persistent_memory)
+                except (OSError, ValueError) as e:
+                    console.print(f"[bold red]Web search failed:[/bold red] {e}")
+                continue
+
             if user_input.startswith("/run "):
                 shell_cmd = user_input.split(" ", 1)[1].strip()
                 output = execute_shell_command(shell_cmd)
@@ -592,10 +749,17 @@ def main():
                         "[yellow]BUILD did not produce an applicable diff. "
                         "Ask the model to implement the change, not just describe it.[/yellow]"
                     )
-                for command in extract_shell_commands(full_response):
-                    output = execute_shell_command(command)
-                    console.print(f"\n[bold]BUILD command output:[/bold]\n{output}\n")
+            command_outputs = []
+            for command in extract_shell_commands(full_response):
+                output = execute_shell_command(command)
+                console.print(f"\n[bold]{current_mode.upper()} command output:[/bold]\n{output}\n")
+                command_outputs.append(f"$ {command}\n{output}")
             messages.append({'role': 'assistant', 'content': full_response})
+            if command_outputs:
+                messages.append({
+                    'role': 'user',
+                    'content': "[Confirmed local command output]\n" + "\n\n".join(command_outputs),
+                })
             
             persistent_memory[current_mode] = messages
             save_persistent_memory(persistent_memory)

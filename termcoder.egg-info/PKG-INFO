@@ -1,14 +1,13 @@
 Metadata-Version: 2.4
 Name: termcoder
-Version: 1.3.0
-Summary: Autonomous, professional, and minimalist local software development agent for terminals.
-Author-email: Dloped <dlopedixorg@gmail.com>
-License: MIT
+Version: 2.0.0
+Summary: Elite autonomous software engineering terminal agent.
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: ollama>=0.3.0
 Requires-Dist: rich>=13.0.0
+Requires-Dist: textual>=0.40.0
 Dynamic: license-file
 
 # 💻 TermCoder

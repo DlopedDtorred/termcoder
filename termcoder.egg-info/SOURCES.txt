@@ -9,3 +9,4 @@ termcoder.egg-info/dependency_links.txt
 termcoder.egg-info/entry_points.txt
 termcoder.egg-info/requires.txt
 termcoder.egg-info/top_level.txt
+termcoder/../logo-ascii.txt

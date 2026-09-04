@@ -3,6 +3,7 @@ README.md
 logo-ascii.txt
 pyproject.toml
 termcoder/__init__.py
+termcoder/__main__.py
 termcoder/cli.py
 termcoder.egg-info/PKG-INFO
 termcoder.egg-info/SOURCES.txt

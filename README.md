@@ -36,9 +36,10 @@ TermCoder is a feature-rich, persistent, interactive CLI agent designed to bridg
 ---
 
 ## Installation
-
+With Curl
+```bash
 curl -fsSL https://raw.githubusercontent.com/DlopedDtorred/termcoder/main/install.sh | bash
-
+```
 Clone the repository and install it in editable mode using pip:
 
 ```bash

@@ -1,6 +1,6 @@
 {
   "name": "termcoder",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Local AI Agent",
-  "install": "[https://raw.githubusercontent.com/dlopeddtorred/termcoder/main/install.sh](https://raw.githubusercontent.com/dlopeddtorred/termcoder/main/install.sh)"
+  "install": "https://raw.githubusercontent.com/DlopedDtorred/termcoder/main/install.sh"
 }
